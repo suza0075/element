@@ -1,0 +1,187 @@
+###############################
+# Element composition analysis
+# 1. PERMANOVA and pairwise PERANOVA
+# 2. Beta-dispersion and permutation tests 
+# 3. Outlier analysis
+# 4. z-score heatmaps
+# 5. PCA, 2D and 3D, loading, heatmaps
+# 6. Outlier analysis
+# 7. Boxplot of absolute valuesnodules most enriched and depleted
+
+# install required packages
+install.packages("vegan")         # Ecological analysis including PERMANOVA
+install.packages("tidyverse")     # For data manipulation and visualization
+install.packages("dplyr")         # Core data manipulation
+install.packages("car")  
+install.packages("pairwiseAdonis")
+install.packages("FSA") 
+install.packages("DescTools")
+# Load libraries
+library(vegan)
+library(tidyverse)
+library(car)
+library(dplyr)
+library(pairwiseAdonis)
+library(FSA)
+library(DescTools)
+library(factoextra)
+library(plotly)
+library(ggrepel)
+library(pheatmap)
+library(gridExtra)
+
+# Set working directory
+setwd("C:/Users/bjt457/OneDrive - University of Copenhagen/Documents/minerals")
+list.files()
+
+# Read data
+raw <- read.csv("raw.csv", header=T, sep = ";")
+# data where the two soil samples are combined
+clean <- read.csv("1.clean.csv", header = T, sep = ";")
+
+################################
+######### PERMANOVA ############
+################################
+#Prepare data for PERMANOVA
+# Extract elements
+minerals_raw <- raw[, 5:28]
+
+# Standardize mineral data and compute Euclidean distance matrix using vegdist
+dist_matrix_raw <- vegdist(scale(minerals_raw), method = "euclidean")  # Scale to standardize
+
+# Run PERMANOVA origin
+permanova_origin <- adonis2(dist_matrix_raw ~ Origin, data = raw, by = "margin", permutations = 9999)
+# View results
+permanova_origin
+
+# PERMANOVA for Colony
+permanova_colony <- adonis2(dist_matrix_raw ~ Colony, data = raw, by = "margin", permutations = 9999)
+permanova_colony
+
+# PERMANOVA for Habitat
+permanova_habitat <- adonis2(dist_matrix_raw ~ Habitat, by = "margin", data = raw, permutations = 9999)
+permanova_habitat
+
+#####################
+### pairwise anova 
+###################
+
+minerals_raw <- raw[, 5:28] %>% drop_na()
+dist_matrix <- vegdist(scale(minerals_raw), method = "euclidean")
+pairwise.adonis(dist_matrix, factors = raw$Origin, p.adjust.m = "BH")
+
+#########################
+###### combine two soil samples moving forward
+#########################
+
+#########################
+##### Betadisper ########
+#########################
+
+# Extract element coloumns
+minerals <- clean[, 5:28]
+# Extract groupings
+origin <- clean$Origin
+colony <- clean$Colony
+habitat <- clean$Habitat
+# Standardize element cleaned data and compute Euclidean distance matrix using vegdist
+dist_matrix <- vegdist(scale(minerals), method = "euclidean")  # Scale to standardize
+
+#### beta dispersion
+dispersion <- betadisper(dist_matrix, group = origin, bias.adjust = TRUE)
+# distance values
+dispersion$distances
+dispersion$group.distances
+# Run the permutation test with 9999 permutations
+permutest(dispersion, permutations = 9999)
+
+# colony and habitat
+dispersion_colony <- betadisper(dist_matrix, group = colony, bias.adjust = TRUE)
+dispersion_habitat <- betadisper(dist_matrix, group = habitat, bias.adjust = TRUE)
+permutest(dispersion_colony, permutations = 9999)
+permutest(dispersion_habitat, permutations = 9999)
+
+# Tukey HSD on betadisper
+tukey_result <- TukeyHSD(dispersion)
+print(tukey_result)
+
+##############
+## Dunn’s test on betadispersion
+##############
+dunn_results <- dunnTest(dispersion$distances ~ clean$Origin, method = "bh")
+dunn_results
+
+# Visualize dispersion distances
+plot(dispersion, main = "Multivariate dispersion by sample type")
+
+# define colours
+my_colors <- c(
+    "Soil" = "#ec89f5",        # pink-purple
+    "Gut content" = "#b5b733", # olive green
+    "Fresh comb" = "#f9918a",  # light pink
+    "Old comb" = "#33c0f8",    # sky blue
+    "Nodules" = "#33cc97"      # turquoise
+)
+
+# Reorder group levels for consistent plotting
+clean$Origin <- factor(clean$Origin, 
+                       levels = c("Soil", "Gut content", "Fresh comb", "Old comb", "Nodules"))
+### reorder in dispersion
+dispersion$group <- factor(dispersion$group, 
+                           levels = c("Soil", "Gut content", "Fresh comb", "Old comb", "Nodules"))
+
+# Boxplot: distance to centroid by sample type
+boxplot(dispersion,
+        main = "Distance to centroid by sample type",
+        ylab = "Distance to group centroid",
+        xlab = "Sample type",
+        col = my_colors[levels(dispersion$group)])
+
+#### Winsorize distances to reduce influence of extreme values ####
+library(DescTools)
+# Calculate the 5th and 95th percentiles
+limits <- quantile(dispersion$distances, probs = c(0.05, 0.95), na.rm = TRUE)
+# Then apply Winsorize with 'val'
+winsorized_dispersion <- dispersion
+winsorized_dispersion$distances <- Winsorize(dispersion$distances, val = limits)
+
+#Boxplot with winsorized dispersion
+boxplot(winsorized_dispersion,
+        main = "Distance to centroid by sample type (Winsorized)",
+        ylab = "Distance to group centroid",
+        xlab = "Sample type",
+        cex.axis = 1.2,  
+        cex.lab = 1.5,  
+        col = my_colors[levels(winsorized_dispersion$group)])
+
+#####################
+### Outlier analysis
+### Id of the two gut sample outliers
+#####################
+
+# Extract distances for Gut content samples (or other outliers)
+distances <- dispersion$distances
+gut_distances <- distances[clean$Origin == "Gut content"]
+# Find the largest distances
+sort(gut_distances, decreasing = TRUE)
+# Match sample names
+gut_sample_names <- clean$Colony[clean$Origin == "Gut content"]
+gut_habitat <- clean$Habitat[clean$Origin == "Gut content"]
+# Combine distances and names
+outlier_table <- data.frame(Colony = gut_sample_names, Distance = gut_distances, Habitat = gut_habitat)
+# Sort it
+outlier_table <- outlier_table[order(-outlier_table$Distance), ]
+outlier_table
+
+#Plot, colour by habitat
+ggplot(outlier_table, aes(x = reorder(Colony, Distance), y = Distance, fill = Habitat)) +
+    geom_bar(stat = "identity") +
+    coord_flip() +
+    theme_minimal() +
+    labs(
+        title = "Distance to Centroid for Gut Samples",
+        x = "Colony",
+        y = "Distance to Centroid",
+        fill = "Habitat"
+    ) +
+    theme(legend.position = "bottom")
