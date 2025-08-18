@@ -8,32 +8,6 @@
 # 6. Outlier analysis
 # 7. Boxplot of absolute valuesnodules most enriched and depleted
 
-# install required packages
-install.packages("vegan")         # Ecological analysis including PERMANOVA
-install.packages("tidyverse")     # For data manipulation and visualization
-install.packages("dplyr")         # Core data manipulation
-install.packages("car")  
-install.packages("pairwiseAdonis")
-install.packages("FSA") 
-install.packages("DescTools")
-# Load libraries
-library(vegan)
-library(tidyverse)
-library(car)
-library(dplyr)
-library(pairwiseAdonis)
-library(FSA)
-library(DescTools)
-library(factoextra)
-library(plotly)
-library(ggrepel)
-library(pheatmap)
-library(gridExtra)
-
-# Set working directory
-setwd("C:/Users/bjt457/OneDrive - University of Copenhagen/Documents/minerals")
-list.files()
-
 # Read data
 raw <- read.csv("raw.csv", header=T, sep = ";")
 # data where the two soil samples are combined
