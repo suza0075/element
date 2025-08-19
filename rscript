@@ -8,10 +8,45 @@
 # 6. Outlier analysis
 # 7. Boxplot of absolute valuesnodules most enriched and depleted
 
+# install packages
+install.packages("vegan")   # Community ecology: PERMANOVA, Beta-dispersion, ordination (NMDS, PCA) distance calculation  
+install.packages("tidyverse") # PERMANOVA, Beta-dispersion, ggplot
+install.packages("ggplot2") # Plots
+install.packages("dplyr") # Data manipulation
+install.packages("car")  # Companion to Applied Regression, diagnostic tests
+install.packages("pairwiseAdonis") # Extension of vegan, Pairwise tests after PERMANOVA
+install.packages("FSA")  # Dunns post hoc test
+install.packages("DescTools") # Winsorizing values (trimmming
+install.packages("gridExtra") # plot layout
+install.packages("plotly") # 3d PCA, interactive
+install.packages("ggrepel") # extension of ggplot, used for overlapping labels
+install.packages("pheatmap") # easy heatmaps
+install.packages("tidyr") # data reshaping
+
+# Load libraries
+library(vegan)
+library(tidyverse)
+library(ggplot2)
+library(car)
+library(dplyr)
+library(pairwiseAdonis)
+library(FSA)
+library(DescTools)
+library(gridExtra)
+library(plotly)
+library(ggrepel)
+library(pheatmap)
+library(tidyr)
+
+# Set working directory
+setwd("C:/Users/bjt457/OneDrive - University of Copenhagen/Documents/minerals")
+list.files()
+
 # Read data
 raw <- read.csv("raw.csv", header=T, sep = ";")
 # data where the two soil samples are combined
 clean <- read.csv("1.clean.csv", header = T, sep = ";")
+clean_data <- read.csv("1.clean.csv", header=T, sep = ";")
 
 ################################
 ######### PERMANOVA ############
@@ -85,7 +120,9 @@ print(tukey_result)
 dunn_results <- dunnTest(dispersion$distances ~ clean$Origin, method = "bh")
 dunn_results
 
+################################
 # Visualize dispersion distances
+###############################
 plot(dispersion, main = "Multivariate dispersion by sample type")
 
 # define colours
@@ -159,3 +196,439 @@ ggplot(outlier_table, aes(x = reorder(Colony, Distance), y = Distance, fill = Ha
         fill = "Habitat"
     ) +
     theme(legend.position = "bottom")
+
+#### Z-score heatmaps of minerals ####
+#### identify minerals responsible for this distance
+## Subset gut samples
+# Subset only gut content samples
+gut_data <- clean %>% filter(Origin == "Gut content")
+# Select the element columns
+gut_minerals <- gut_data[, 5:28]
+# Calculate Z-scores for each mineral
+gut_zscores <- as.data.frame(scale(gut_minerals))
+# Add SampleID and Colony information back
+gut_zscores$Colony <- gut_data$Colony
+gut_zscores$Habitat <- gut_data$Habitat
+# Longer format
+gut_long <- gut_zscores %>%
+    pivot_longer(cols = -c(Colony, Habitat), names_to = "Mineral", values_to = "Zscore")
+# Plot heatmap of Z-scores
+gut_heatmap <- ggplot(gut_long, aes(x = Mineral, y = Colony, fill = Zscore)) +
+    geom_tile() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    theme_minimal() +
+    labs(
+        title = "Z-scores of elements in gut samples",
+        x = "Element",
+        y = "Sample",
+        fill = "Z-score"
+    ) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+gut_heatmap
+
+## Subset soil samples
+soil_data <- clean %>% filter(Origin == "Soil")
+# Select the element columns
+soil_minerals <- soil_data[, 5:28]
+# Calculate Z-scores for each element
+soil_zscores <- as.data.frame(scale(soil_minerals))
+# Add SampleID and Colony information back
+soil_zscores$Colony <- soil_data$Colony
+soil_zscores$Habitat <- soil_data$Habitat
+# longer
+soil_long <- soil_zscores %>%
+    pivot_longer(cols = -c(Colony, Habitat), names_to = "Mineral", values_to = "Zscore")
+# Plot heatmap of Z-scores
+soil_heatmap <- ggplot(soil_long, aes(x = Mineral, y = Colony, fill = Zscore)) +
+    geom_tile() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    theme_minimal() +
+    labs(
+        title = "Z-scores of element in soil samples",
+        x = "Element",
+        y = "Sample",
+        fill = "Z-score"
+    ) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+soil_heatmap
+
+## arrange plots side by side
+grid.arrange(gut_heatmap, soil_heatmap, ncol = 1)
+
+#########################
+##### PCA ###############
+#########################
+
+# Read data
+clean <- read.csv("1.clean.csv", header=T, sep = ";")
+
+### Prepare input for PCA
+# Subset just the elements and scale (mean=0, sd=1)
+elements_scaled <- scale(clean[, 5:28]) 
+
+# Perform PCA
+pca <- prcomp(elements_scaled, center = TRUE, scale. = TRUE)
+# View summary of variance
+summary(pca)
+# Extract PCA scores
+pca_scores <- as.data.frame(pca$x)
+
+# Combine with sample type and habitat
+pca_scores$Origin <- clean$Origin
+# Add Habitat column - might not needed
+pca_scores$Habitat <- clean$Habitat
+
+#set colours
+my_colors <- c(
+    "Soil" = "#ec89f5",        # pink
+    "Gut content" = "#b5b733", # olive green
+    "Fresh comb" = "#f9918a",  # light pink
+    "Old comb" = "#33c0f8",    # sky blue
+    "Nodules" = "#33cc97"      # green
+)
+
+#Plot PCA with ggplot2, PC1, PC2
+pca_plot <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = Origin)) +
+    geom_point(size = 3, alpha = 0.8) +
+    stat_ellipse(level = 0.95, alpha = 0.1, aes(fill = Origin), geom = "polygon",)+
+    scale_color_manual(values = my_colors) +
+    scale_fill_manual(values = my_colors) +  
+    labs(title = "PCA of Element Composition",
+         x = paste0("PC1 (", round(summary(pca_result)$importance[2,1]*100, 1), "%)"),
+         y = paste0("PC2 (", round(summary(pca_result)$importance[2,2]*100, 1), "%)")) +
+    theme_classic() +
+    theme(
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+    )
+pca_plot
+
+# Basic PCA plot with PC2 and PC3
+pca_plot2 <- ggplot(pca_scores, aes(x = PC3, y = PC2, color = Origin)) +
+    geom_point(size = 3, alpha = 0.8) +
+    stat_ellipse(level = 0.95, alpha = 0.1, aes(fill = Origin), geom = "polygon",)+
+    scale_color_manual(values = my_colors) +
+    scale_fill_manual(values = my_colors) +  
+    labs(title = "PCA of Element Composition",
+         x = paste0("PC3 (", round(summary(pca_result)$importance[2,3]*100, 1), "%)"),
+         y = paste0("PC2 (", round(summary(pca_result)$importance[2,2]*100, 1), "%)")) +
+    theme_classic() +
+    theme(
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+    )
+pca_plot2
+
+## arrange plots side by side
+PCA_plots <- grid.arrange(pca_plot, pca_plot2, ncol = 2)
+PCA_plots
+
+### 3D plot
+# Extract the first 3 PCs
+pca_scores_3d <- as.data.frame(pca$x[, 1:3])
+colnames(pca_scores_3d) <- c("PC1", "PC2", "PC3")
+# Combine with sample type and habitat
+pca_scores_3d$Origin <- clean$Origin
+pca_scores_3d$Habitat <- clean$Habitat
+# Match colors to each Origin
+pca_scores_3d$color <- my_colors[as.character(pca_scores_3d$Origin)]
+
+# Create interactive 3D plot
+plot_3d <- plot_ly(pca_scores_3d, 
+        x = ~PC1, y = ~PC2, z = ~PC3,
+        type = "scatter3d",
+        mode = "markers",
+        color = ~Origin,             
+        colors = my_colors,
+        marker = list(size = 5, opacity = 0.8),
+        text = ~paste("Habitat:", Habitat),  # Add as hover text
+        hoverinfo = "text+x+y+z") %>%
+    layout(title = "3D PCA Plot of Mineral Composition",
+           scene = list(
+               xaxis = list(title = paste0("PC1 (", round(summary(pca_result)$importance[2,1]*100, 1), "%)"),
+                            titlefont = list(size = 18),
+                            tickfont = list(size = 14)
+               ),
+               yaxis = list(title = paste0("PC2 (", round(summary(pca_result)$importance[2,2]*100, 1), "%)"),
+                            titlefont = list(size = 18),
+                            tickfont = list(size = 14)
+               ),
+               zaxis = list(title = paste0("PC3 (", round(summary(pca_result)$importance[2,3]*100, 1), "%)"),
+                            titlefont = list(size = 18),
+                            tickfont = list(size = 14)
+               )
+           ))
+
+plot_3d
+
+#########################
+##### PCA_raw to virsualise the two soil samples
+#########################
+
+# Read data above if not already done
+
+### Subselect elements and scale elements for PCA
+raw_elements <- scale(raw[, 5:28])
+
+# Perform PCA
+pca_raw <- prcomp(raw_elements, center = TRUE, scale. = TRUE)
+# View summary of variance explained
+summary(pca_raw)
+
+# Extract PCA scores and metadata
+pca_scores_raw <- as.data.frame(pca_raw$x)
+# Combine with sample type
+pca_scores_raw$Origin <- raw$Origin
+
+#set colours
+my_colors_raw <- c(
+    "Soil 0m" = "#ec89f5",        # pink
+    "Soil 2m" = "#d146d3",
+    "Gut content" = "#b5b733", # olive green
+    "Fresh comb" = "#f9918a",  # light pink
+    "Old comb" = "#33c0f8",    # sky blue
+    "Nodules" = "#33cc97"      # green
+)
+
+### 3D plot
+# Extract the first 3 PCs and sample metadata
+pca_scores_3d_raw <- as.data.frame(pca_raw$x[, 1:3])
+colnames(pca_scores_3d_raw) <- c("PC1", "PC2", "PC3")
+# Combine with sample type and habitat
+pca_scores_3d_raw$Origin <- raw$Origin
+
+# Match colors to each Origin
+pca_scores_3d_raw$color <- my_colors_raw[as.character(pca_scores_3d_raw$Origin)]
+
+# Create interactive 3D plot
+plot_3d_raw <- plot_ly(pca_scores_3d_raw, 
+                   x = ~PC1, y = ~PC2, z = ~PC3,
+                   type = "scatter3d",
+                   mode = "markers",
+                   color = ~Origin,             
+                   colors = my_colors_raw,
+                   symbol = ~Origin,            # <<-- Add this line
+                   symbols = c("diamond", "circle", "circle", "square", "circle-open", "circle"),  # list of shapes
+                   marker = list(size = 5, opacity = 0.8),
+                hoverinfo = "text+x+y+z") %>%
+    layout(title = "3D PCA of element Composition",
+           scene = list(
+               xaxis = list(title = paste0("PC1 (", round(summary(pca_result)$importance[2,1]*100, 1), "%)"),
+                            titlefont = list(size = 18),
+                            tickfont = list(size = 14)
+               ),
+               yaxis = list(title = paste0("PC2 (", round(summary(pca_result)$importance[2,2]*100, 1), "%)"),
+                            titlefont = list(size = 18),
+                            tickfont = list(size = 14)
+               ),
+               zaxis = list(title = paste0("PC3 (", round(summary(pca_result)$importance[2,3]*100, 1), "%)"),
+                            titlefont = list(size = 18),
+                            tickfont = list(size = 14)
+               )
+           ))
+
+plot_3d_raw
+
+#save in high resolution if needed
+install.packages("htmlwidgets")
+library(htmlwidgets)
+saveWidget(plot_3d_raw, "plot_3d_raw.html", selfcontained = TRUE)
+
+####################################
+# Loadings (contribution of elements)
+####################################
+# Extract PCA loadings
+loadings <- as.data.frame(pca$rotation)
+loadings$Mineral <- rownames(loadings)
+
+# Create ggplot PCA loading plot
+loading_plot <- ggplot(loadings, aes(x = PC1, y = PC2, label = Mineral)) +
+    geom_segment(aes(x = 0, y = 0, xend = PC1, yend = PC2),
+                 arrow = arrow(length = unit(0.2, "cm")), color = "grey50") +
+    geom_text(size = 3, vjust = 1.2, color = "black") +
+    labs(title = "PCA Loadings (Mineral Contributions)",
+         x = paste0("PC1 (", round(summary(pca_result)$importance[2,1]*100, 1), "% variance)"),
+         y = paste0("PC2 (", round(summary(pca_result)$importance[2,2]*100, 1), "% variance)")) +
+    theme_minimal() +
+    coord_equal()
+loading_plot
+
+# Rank minerals by contribution
+# View top contributing minerals to PC1 and PC2
+pca_loadings_sorted <- loadings %>%
+    arrange(desc(abs(PC1)))
+# view
+pca_loadings_sorted
+
+# Rank minerals by contribution for all PC selected
+loadings_ranked <- loadings %>%
+    select(Mineral, PC1, PC2, PC3) %>%
+    mutate(Magnitude = sqrt(PC1^2 + PC2^2 + PC3^2)) %>%
+    arrange(desc(Magnitude))
+print(head(loadings_ranked, 10))
+
+##### heatmap with PCA loadings:
+# OPTIONAL: arrange by PC2 or custom grouping
+pca_loadings_ordered <- loadings %>%
+    arrange(PC2)  # or PC1
+
+# Set rownames to mineral names for heatmap labels
+rownames(pca_loadings_ordered) <- pca_loadings_ordered$Mineral
+pca_matrix <- as.matrix(pca_loadings_ordered[, c("PC1", "PC2", "PC3")])
+
+# Create heatmap
+pheatmap(pca_matrix,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         main = "PCA loadings of elements (PC1, PC2, PC3)",
+         angle_col = 45,
+         fontsize_row = 15,
+         fontsize_col = 15,
+         display_numbers = TRUE,
+         fontsize_number = 15,
+         number_color = "black")
+
+#####################
+### Boxplots of absolute values
+#####################
+
+# Read in your data
+clean <- read.csv("1.clean.csv", header=T, sep = ";")
+
+# Convert to long format
+clean_long <- clean %>%
+    pivot_longer(
+        cols = B:Pb,
+        names_to = "Element",
+        values_to = "Value"
+    )
+
+# Set custom order for Origin
+clean_long$Origin <- factor(clean_long$Origin,
+                            levels = c("Soil", "Gut content", "Fresh comb", "Old comb", "Nodules"))
+
+#set colours
+my_colors <- c(
+    "Soil" = "#ec89f5",        # pink
+    "Gut content" = "#b5b733", # olive green
+    "Fresh comb" = "#f9918a",  # light pink
+    "Old comb" = "#33c0f8",    # sky blue
+    "Nodules" = "#33cc97"      # green
+)
+
+# Plot boxplots for all mineral split by Origin
+boxplot <- ggplot(clean_long, aes(x = Origin, y = Value, fill = Origin)) +
+    geom_boxplot() +
+    facet_wrap(~Element, scales = "free_y", ncol = 4) +
+    scale_fill_manual(values = c(my_colors)) +
+    theme_classic(base_size = 12) +
+    labs(title = "Element Concentrations by Origin", 
+         y = "Mg/kg", x = "Origin") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "bottom")
+boxplot
+
+### data trimmed
+clean_long_trimmed <- clean_long %>%
+    group_by(Element) %>%
+    mutate(
+        lower = quantile(Value, 0.025, na.rm = TRUE),
+        upper = quantile(Value, 0.975, na.rm = TRUE),
+        Value = ifelse(Value < lower, lower,
+                       ifelse(Value > upper, upper, Value))
+    )
+
+# updated
+ggplot(clean_long_trimmed, aes(x = Origin, y = Value, fill = Origin)) +
+    geom_boxplot() +
+    facet_wrap(~Element, scales = "free_y", ncol = 4) +
+    scale_fill_manual(values = my_colors) + 
+    theme_classic(base_size = 12) +
+    labs(title = "Element Concentrations by Origin", x = "Origin", y = "Concentration, mg/kg") +
+    theme(
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank()
+    )
+
+#### filter trimmed data for 6 most enriched and depleted in nodules
+clean_topsix <- clean_long_trimmed %>%
+    mutate(Group = case_when(
+        Element %in% c("S", "P", "K", "Cu", "Cd", "Tl") ~ "Enriched",
+        Element %in% c("Pb", "V", "Co", "Fe", "Al", "Ba") ~ "Depleted",
+        TRUE ~ "Unknown"
+    ))
+
+# Filter for enriched or depleted
+enriched_data <- clean_topsix %>% filter(Group == "Enriched")
+# ordering
+enriched_data$Element <- factor(enriched_data$Element,
+                                levels = c("S", "P", "K", "Cu", "Cd", "Tl"))
+# Plot enriched
+enriched_plot <- ggplot(enriched_data, aes(x = Origin, y = Value, fill = Origin)) +
+    geom_boxplot() +
+    facet_wrap(~Element, scales = "free_y", ncol = 3) +
+    scale_fill_manual(values = c(my_colors)) +
+    theme_classic(base_size = 16) +
+    theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank()
+    ) +
+    labs(
+        title = "The six most enriched elements in nodules",
+        y = "Mg/kg"
+    )
+enriched_plot
+
+# Filter for enriched or depleted
+depleted_data <- clean_topsix %>% filter(Group == "Depleted")
+
+#### trim further if needed and then use that output
+# Winsorize (trim) the data
+depleted_data_90 <- depleted_data %>%
+    group_by(Element) %>%
+    mutate(
+        lower = quantile(Value, 0.05, na.rm = TRUE),
+        upper = quantile(Value, 0.93, na.rm = TRUE),
+        Value = pmin(pmax(Value, lower), upper)  # Cap values within bounds
+    )
+
+# ordering
+depleted_data$Element <- factor(depleted_data$Element,
+                                   levels = c("Pb", "V", "Co", "Fe", "Al", "Ba"))
+# Plot depleted
+depleted_plot <- ggplot(depleted_data, aes(x = Origin, y = Value, fill = Origin)) +
+    geom_boxplot() +
+    facet_wrap(~Element, scales = "free_y", ncol = 3) +
+    scale_fill_manual(values = c(my_colors)) +
+    theme_classic(base_size = 16) +
+    theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 20),
+        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank()
+    ) +
+    labs(
+        title = "The six most depleted elements in nodules",
+        y = "Mg/kg"
+    )
+depleted_plot
